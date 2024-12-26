@@ -18,8 +18,8 @@ st.write("Analisis tren penyewaan sepeda berdasarkan faktor musiman, pengguna, d
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv('day.csv')
-        df_hour = pd.read_csv('hour.csv')
+        df = pd.read_csv('dashboard/day.csv')
+        df_hour = pd.read_csv('dashboard/hour.csv')
         df['dteday'] = pd.to_datetime(df['dteday'])
         df_hour['dteday'] = pd.to_datetime(df_hour['dteday'])
         return df, df_hour
