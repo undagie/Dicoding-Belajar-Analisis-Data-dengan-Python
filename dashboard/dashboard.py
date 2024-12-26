@@ -18,23 +18,27 @@ st.write("Analisis tren penyewaan sepeda berdasarkan faktor musiman, pengguna, d
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv('dashboard/main_data.csv')
+        df = pd.read_csv('day.csv')
+        df_hour = pd.read_csv('hour.csv')
         df['dteday'] = pd.to_datetime(df['dteday'])
-        return df
+        df_hour['dteday'] = pd.to_datetime(df_hour['dteday'])
+        return df, df_hour
     except Exception as e:
         st.error(f"Error loading data: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
-data = load_data()
-if data.empty:
+data, data_hour = load_data()
+if data.empty or data_hour.empty:
     st.stop()
 
 # --- SIDEBAR FILTER ---
 st.sidebar.header("Filter Data")
 selected_year = st.sidebar.selectbox("Pilih Tahun", options=["2011", "2012"])
 selected_season = st.sidebar.multiselect("Pilih Musim", options=[1, 2, 3, 4], default=[1, 2, 3, 4], format_func=lambda x: {1: "Spring", 2: "Summer", 3: "Fall", 4: "Winter"}[x])
+selected_weather = st.sidebar.multiselect("Pilih Cuaca", options=[1, 2, 3, 4], default=[1, 2, 3, 4], format_func=lambda x: {1: "Clear", 2: "Mist", 3: "Light Snow/Rain", 4: "Heavy Rain/Snow"}[x])
 
-filtered_data = data[(data['yr'] == int(selected_year) - 2011) & (data['season'].isin(selected_season))]
+filtered_data = data[(data['yr'] == int(selected_year) - 2011) & (data['season'].isin(selected_season)) & (data['weathersit'].isin(selected_weather))]
+data_hour_filtered = data_hour[(data_hour['yr'] == int(selected_year) - 2011) & (data_hour['season'].isin(selected_season)) & (data_hour['weathersit'].isin(selected_weather))]
 
 # --- RFM-LIKE ANALYSIS ---
 st.header("Segmentasi Pengguna: Registered vs Casual")
@@ -55,6 +59,7 @@ fig1 = px.bar(
     title="Rata-rata Penyewaan Pengguna per Hari"
 )
 st.plotly_chart(fig1)
+st.write("Grafik ini menunjukkan bagaimana pengguna casual dan registered menggunakan sepeda pada setiap hari dalam seminggu.")
 
 # --- ANALISIS POLA MUSIMAN ---
 st.header("Pola Musiman Penyewaan Sepeda")
@@ -71,49 +76,7 @@ fig2 = px.bar(
     title="Rata-rata Penyewaan Sepeda per Musim dan Hari"
 )
 st.plotly_chart(fig2)
-
-# --- MANUAL CLUSTERING ---
-st.header("Manual Clustering: Penggunaan Sepeda")
-st.write("Pengelompokan jumlah penyewaan sepeda ke dalam kategori **Low Usage**, **Medium Usage**, dan **High Usage**.")
-st.write("Grafik ini mengelompokkan jumlah penyewaan sepeda ke dalam tiga kategori berdasarkan banyaknya penyewaan, sehingga mempermudah analisis pola penggunaan.")
-
-# Fungsi Manual Clustering
-def cluster_usage(cnt):
-    if cnt < 2000:
-        return 'Low Usage'
-    elif 2000 <= cnt < 4000:
-        return 'Medium Usage'
-    else:
-        return 'High Usage'
-
-filtered_data['Usage_Cluster'] = filtered_data['cnt'].apply(cluster_usage)
-cluster_counts = filtered_data['Usage_Cluster'].value_counts().reset_index()
-cluster_counts.columns = ['Cluster', 'Count']
-
-fig3 = px.bar(
-    cluster_counts, x='Cluster', y='Count', color='Cluster',
-    title="Distribusi Clustering Penyewaan Sepeda"
-)
-st.plotly_chart(fig3)
-
-# --- BINNING JUMLAH PENYEWAAN ---
-st.header("Binning Jumlah Penyewaan Sepeda")
-st.write("Data penyewaan dibagi ke dalam interval untuk melihat distribusi penggunaan sepeda.")
-st.write("Grafik ini menunjukkan distribusi jumlah penyewaan sepeda dengan membagi data ke dalam interval seperti Very Low, Low, Medium, dan High.")
-
-# Binning yang lebih berarti berdasarkan data aktual
-max_cnt = filtered_data['cnt'].max()
-bins = [0, 1000, 3000, 5000, max_cnt]
-labels = ['Very Low', 'Low', 'Medium', 'High']
-filtered_data['Binned_Usage'] = pd.cut(filtered_data['cnt'], bins=bins, labels=labels)
-binned_counts = filtered_data['Binned_Usage'].value_counts().reset_index()
-binned_counts.columns = ['Interval', 'Count']
-
-fig4 = px.bar(
-    binned_counts, x='Interval', y='Count', color='Interval',
-    title="Distribusi Binning Penyewaan Sepeda"
-)
-st.plotly_chart(fig4)
+st.write("Grafik ini memberikan wawasan tentang perbedaan penyewaan sepeda berdasarkan musim dan hari kerja/non-kerja.")
 
 # --- TREND ANALYSIS ---
 st.header("Tren Penyewaan Bulanan")
@@ -123,12 +86,61 @@ st.write("Grafik ini membantu mengidentifikasi tren musiman dari jumlah penyewaa
 monthly_trend = filtered_data.groupby(filtered_data['dteday'].dt.to_period('M'))['cnt'].mean().reset_index()
 monthly_trend['dteday'] = monthly_trend['dteday'].dt.to_timestamp()
 
-fig5 = px.line(
+fig3 = px.line(
     monthly_trend, x='dteday', y='cnt',
     labels={'dteday': 'Bulan', 'cnt': 'Rata-rata Penyewaan'},
     title="Tren Penyewaan Bulanan"
 )
-st.plotly_chart(fig5)
+st.plotly_chart(fig3)
+st.write("Grafik ini menampilkan tren penyewaan sepeda bulanan untuk memahami pola musiman.")
 
-# --- FOOTER ---
+# --- PERTANYAAN BISNIS 1: Pola Penggunaan Berdasarkan Jam ---
+st.header("Pola Penggunaan Sepeda Berdasarkan Jam")
+st.write("Analisis pola penggunaan sepeda dalam satu hari dibagi menjadi morning, afternoon, evening, dan night.")
+
+def categorize_hour(hour):
+    if 5 <= hour < 12:
+        return "Morning"
+    elif 12 <= hour < 17:
+        return "Afternoon"
+    elif 17 <= hour < 21:
+        return "Evening"
+    else:
+        return "Night"
+
+# Tambahkan kategori waktu pada data hourly
+data_hour_filtered['Time_Period'] = data_hour_filtered['hr'].apply(categorize_hour)
+time_period_usage = data_hour_filtered.groupby('Time_Period')['cnt'].mean().reset_index()
+
+fig4 = px.bar(
+    time_period_usage, x='Time_Period', y='cnt', color='Time_Period',
+    labels={'cnt': 'Rata-rata Penyewaan', 'Time_Period': 'Waktu'},
+    title="Rata-rata Penyewaan Sepeda Berdasarkan Waktu"
+)
+st.plotly_chart(fig4)
+st.write("Grafik ini menunjukkan rata-rata penggunaan sepeda dalam berbagai periode waktu dalam sehari.")
+
+# --- PERTANYAAN BISNIS 2: Pengaruh Faktor Cuaca ---
+st.header("Pengaruh Faktor Cuaca terhadap Penyewaan Sepeda")
+st.write("Analisis ini menunjukkan hubungan antara faktor cuaca seperti suhu, kelembapan, dan kecepatan angin dengan jumlah penyewaan sepeda.")
+
+# Visualisasi pengaruh suhu
+fig5 = px.scatter(
+    filtered_data, x='temp', y='cnt', color='cnt',
+    labels={'temp': 'Suhu (Normalized)', 'cnt': 'Jumlah Penyewaan'},
+    title="Hubungan Suhu dan Jumlah Penyewaan"
+)
+st.plotly_chart(fig5)
+st.write("Grafik ini menunjukkan bagaimana suhu memengaruhi jumlah penyewaan sepeda.")
+
+# Visualisasi pengaruh kelembapan
+fig6 = px.scatter(
+    filtered_data, x='hum', y='cnt', color='cnt',
+    labels={'hum': 'Kelembapan (Normalized)', 'cnt': 'Jumlah Penyewaan'},
+    title="Hubungan Kelembapan dan Jumlah Penyewaan"
+)
+st.plotly_chart(fig6)
+st.write("Grafik ini menunjukkan bagaimana kelembapan memengaruhi jumlah penyewaan sepeda.")
+
+# --- PENUTUP ---
 st.write("Dashboard dibuat oleh Muhammad Edya Rosadi | Dataset: Bike Sharing")
